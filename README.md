@@ -75,4 +75,4 @@ Please open issues or pull requests with concise, focused changes.
 
 ## License
 
-This project is released under the MIT License. See `LICENSE` for details.
+This project is released under the Apache License Version 2.0, January 2004.

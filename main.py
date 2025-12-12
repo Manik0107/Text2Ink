@@ -250,7 +250,7 @@ def pdf_to_handwritten(pdf_path, output_dir, font_path):
 
 
 if __name__ == "__main__":
-    pdf_path = "/Users/manikmanavenddram/Text-Ink/pdf/test.pdf"
+    pdf_path = "pdf/test.pdf"
     output_dir = "output_images"
-    font_path = "/Users/manikmanavenddram/Text-Ink/TTF/PatrickHand-Regular.ttf"
+    font_path = "TTF/PatrickHand-Regular.ttf"
     pdf_to_handwritten(pdf_path, output_dir, font_path)

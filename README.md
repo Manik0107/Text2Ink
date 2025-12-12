@@ -9,6 +9,10 @@ Key ideas implemented:
 - Local ink bleed and smudging
 - Paper texture, slight perspective warp and vignette
 
+<p align="center">
+	<img src="output_images/page_0_0.png" alt="Handwritten sample output" width="600"/>
+</p>
+
 ## Features
 
 - Extract text blocks from PDFs using PyMuPDF (`fitz`).

@@ -1,82 +1,69 @@
-# Text2Ink — Handwritten PDF Renderer
+# Text2Ink
 
-Text2Ink converts digital PDFs into images that convincingly resemble handwritten pages. It is intended as a practical, easily extensible toolkit for generating stylized handwritten renderings for design, mockups, or creative workflows.
+**Intelligent Handwritten Note Generation s**
 
-Key ideas implemented:
+Text2Ink is an advanced document processing engine that transforms standard PDFs into structured, professional handwritten notes. Beyond simple font conversion, it utilizes a sophisticated AI pipeline to analyze content, synthesize logical structures, and generate systemic diagrams that are seamlessly integrated into a realistic handwritten layout.
 
-- Per-character variation (position, rotation, scale, kerning)
-- Simulated pen pressure and ink pooling
-- Local ink bleed and smudging
-- Paper texture, slight perspective warp and vignette
+## Core Capabilities
 
-<p align="center">
-	<img src="output_images/page_0_0.png" alt="Handwritten sample output" width="600"/>
-</p>
+### 1. Intelligent Content Analysis (Agno Agents)
+Text2Ink employs a multi-agent AI system:
+*   **Notes Agent**: Analyzes raw PDF text to extract key concepts, structuring them into a clean, hierarchical format with substantial headers and bullet points.
+*   **Mermaid Agent**: Identifies complex relationships and processes within the text to generate valid Mermaid.js diagram definitions. It follows a strict "Systemic Logic" manifesto, ensuring diagrams represent causality, feedback loops, and inputs/outputs rather than simple associations.
 
-## Features
+### 2. Systemic Diagram Generation
+*   **Vertical Layout Optimization**: The engine prioritizes Top-Down (`graph TD`) layouts to maximize diagram size and readability on portrait pages.
+*   **Gigapixel Scaling**: Diagrams are treated as first-class citizens. The engine forces every diagram to upscale to the full width of the page (1400px), ensuring maximum visibility.
+*   **Multi-Page Slicing**: If a diagram is too large to fit on a single page after upscaling, the engine automatically slices it into page-sized segments, spanning it across multiple consecutive pages without loss of detail.
+*   **Robust Rendering**: Diagram requests use JSON-state encoding to handle special characters and complex syntax reliably.
 
-- Extract text blocks from PDFs using PyMuPDF (`fitz`).
-- Render glyphs with Pillow and apply per-character transformations.
-- Post-process with OpenCV (ink bleed, noise, blur, perspective).
-- Configurable parameters for spacing, pressure, bleed and texture.
+### 3. Floating Layout Engine
+The rendering system treats content as a fluid stream of "Blocks" (Text and Diagrams):
+*   **Gap Filling**: If a large diagram must be moved to a new page to fit, the layout engine automatically fills the remaining space on the previous page with subsequent text, eliminating unprofessional vertical gaps.
+*   **Strict Pagination**: Content flows continuously across pages, creating a cohesive notebook feel similar to a human-written journal.
 
-## Quickstart
+### 4. Realistic Handwriting Synthesis
+*   **Text Formatting**: Automatically parses Markdown syntax, converting headers to uppercase bold text and standardizing lists with bullet points.
+*   **Visual Fidelity**: Incorporates realistic paper textures, ruled lines, and ink variability (though pressure is normalized for legibility) to create high-quality output images.
 
-1. Create and activate a Python virtual environment (recommended):
+## Installation
 
-```bash
-python -m venv .venv
-source .venv/bin/activate
-```
+1.  **Clone the Repository**:
+    ```bash
+    git clone https://github.com/Manik0107/Text2Ink.git
+    cd Text2Ink
+    ```
 
-2. Install the Python dependencies:
+2.  **Install Dependencies**:
+    ```bash
+    pip install -r requirements.txt
+    ```
 
-```bash
-pip install -r requirements.txt
-```
+3.  **Configure Environment**:
+    Create a `.env` file and add your API keys (required for the AI Agents):
+    ```bash
+    OPENROUTER_API_KEY=your_key_here
+    ```
 
-3. Put a TrueType font (.ttf) in the `TTF/` folder or update `font_path` in `main.py` to point to a font you prefer.
+## Usage
 
-4. Run the renderer:
+1.  **Prepare Input**: Place your PDF document in the specified input path (default is defined in `main.py`).
+2.  **Run the Engine**:
+    ```bash
+    uv run main.py
+    ```
+3.  **View Output**: The generated handwritten pages and compiled PDF will be saved in the `output_images` directory.
 
-```bash
-uv run main.py
-```
+## Technical Architecture
 
-Generated images are written to `output_images/` by default.
-
-## Configuration & Tuning
-
-Most of the tuning parameters live in `main.py` (search for `draw_handwritten_line`, `apply_pressure_variation`, `add_ink_bleed`, and `add_paper_texture`). Important knobs:
-
-- `word_gap_base` — controls base spacing between words.
-- Per-character jitter ranges (x/y offsets and rotation) — increase for more irregular handwriting.
-- Pressure parameters — adjust stroke thickness and darkness.
-- Ink-bleed probability and kernel sizes — larger values give stronger bleed.
-- Paper texture intensity — higher values make the background more textured/aged.
-
-Recommendation: change one parameter at a time and re-run to evaluate visual impact.
-
-## Implementation notes
-
-- `main.py` is organized as a pipeline: extract text → render per-block → apply distortions → add texture.
-- Pillow is used for glyph rasterization and compositing; OpenCV and NumPy handle image-level filters and warps.
-- The code is intentionally readable and editable: swap fonts, tune ranges, or add new post-processing steps.
-
-## Examples
-
-See the `output_images/` folder after running the script for rendered examples. (Add your own sample PDFs to the `pdf/` folder.)
-
-## Contributing
-
-Contributions are welcome. Good first changes:
-
-- Add CLI flags to control the most-used parameters.
-- Add style presets (e.g., "neat", "loopy", "scribbly").
-- Implement multi-glyph alternates or small vector perturbations for higher realism.
-
-Please open issues or pull requests with concise, focused changes.
+The system operates as a linear pipeline:
+1.  **Extraction**: `fitz` (PyMuPDF) extracts raw text from the source PDF.
+2.  **Orchestration**: `agent.py` invokes the AI Agents to transform raw text into a Structured Note Object containing text blocks and Mermaid diagram codes.
+3.  **Rendering**: `main.py` processes the Note Object:
+    *   **Text Rendering**: Uses Pillow (PIL) to draw text with randomized handwriting fonts on a ruled background.
+    *   **Diagram Rendering**: Fetches rendered diagrams from `mermaid.ink`, applies upscale/slice logic, and composites them onto the page.
+4.  **Assembly**: Individual page images are compiled into a final `handwritten_notes.pdf`.
 
 ## License
 
-This project is released under the Apache License Version 2.0, January 2004.
+This project is licensed under the Apache License 2.0.

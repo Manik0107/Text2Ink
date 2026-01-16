@@ -1,8 +1,13 @@
 import fitz
 from PIL import Image, ImageDraw, ImageFont
+from collections import deque
 import random, math, os
+import re
 import cv2
 import numpy as np
+import httpx
+import base64
+import json
 from dotenv import load_dotenv
 from agent import generate_simple_notes, generate_mermaid_code
 
@@ -250,10 +255,19 @@ import httpx
 import base64
 
 def get_mermaid_image(mermaid_code):
-    """Fetches a PNG of the mermaid diagram from mermaid.ink."""
-    graphbytes = mermaid_code.encode("utf8")
-    base64_bytes = base64.urlsafe_b64encode(graphbytes)
-    base64_string = base64_bytes.decode("ascii")
+    """Fetches a PNG of the mermaid diagram from mermaid.ink using JSON encoding."""
+    state = {
+        "code": mermaid_code,
+        "mermaid": {
+            "theme": "neutral",
+            "securityLevel": "loose"
+        }
+    }
+    json_str = json.dumps(state)
+    state_bytes = json_str.encode('utf-8')
+    base64_bytes = base64.urlsafe_b64encode(state_bytes)
+    base64_string = base64_bytes.decode('ascii')
+    
     url = "https://mermaid.ink/img/" + base64_string
     
     try:
@@ -267,159 +281,285 @@ def get_mermaid_image(mermaid_code):
         return None
 
 
-def render_full_text(full_text, font_path, page_size=(1600, 2000)):
-    """Renders text across multiple pages with formatting and diagrams."""
+def place_diagram_on_page(mermaid_img, img, y, page_size, spacing):
+    """
+    Helper to place a pre-rendered mermaid image.
+    STRICTLY enforces that the image fits within the page bottom margin.
+    Resizes the image if necessary.
+    """
+    bottom_limit = page_size[1] - 100
+    available_h = bottom_limit - y
     
-    # 1. Load Font
-    try:
-        font_path_expanded = os.path.expanduser(font_path)
-        if not os.path.isfile(font_path_expanded):
-            raise OSError(f"Font file not found: {font_path_expanded}")
-        font_size = int(70 * 0.75)  
-        font = ImageFont.truetype(font_path_expanded, font_size)
-    except Exception as e:
-        print(f"Warning: could not load font '{font_path}'. Falling back to default font. ({e})")
-        font = ImageFont.load_default()
+    # 1. Strict Fit Check
+    if mermaid_img.height > available_h:
+        # Resize to fit
+        if available_h < 100: # Safety for nearly zero space (shouldn't happen with MIN checks but safety)
+             return y # Cannot place
+             
+        ratio = available_h / mermaid_img.height
+        new_w = int(mermaid_img.width * ratio)
+        new_h = int(available_h)
+        mermaid_img = mermaid_img.resize((new_w, new_h), Image.Resampling.LANCZOS)
 
-    pages = []
+    # 2. Centering & Paste
+    offset_x = (page_size[0] - mermaid_img.width) // 2
+    img.paste(mermaid_img, (offset_x, int(y)), mask=mermaid_img.split()[3] if 'A' in mermaid_img.getbands() else None)
     
-    # Start first page
+    return y + mermaid_img.height + spacing
+
+
+def render_full_text(full_text, font_path):
+    """
+    Renders text and diagrams with a 'Floating Figure' layout engine.
+    If a diagram doesn't fit, it moves to the next page, and the current page
+    is filled with the subsequent text (if available) to avoid vertical gaps.
+    """
+    print("Starting Floating Layout Render...")
+    
+    # 1. Parse content into a queue of items
+    items = []
+    # Split by mermaid blocks
+    parts = re.split(r"(```mermaid.*?```)", full_text, flags=re.DOTALL)
+    for part in parts:
+        if part.strip().startswith("```mermaid"):
+            code = part.replace("```mermaid", "").replace("```", "").strip()
+            if code:
+                 items.append({"type": "mermaid", "content": code})
+        elif part.strip():
+             items.append({"type": "text", "content": part.strip()})
+             
+    queue = deque(items)
+    
+    # 2. Setup Page
+    page_size = (1600, 2000)
+    pages = []
     current_img, current_draw, TOP_MARGIN, RULE_SPACING = create_ruled_page(page_size)
     current_baseline_y = TOP_MARGIN + RULE_SPACING
-    
-    # 2. Process Content Blocks (Text vs. Mermaid)
-    # Split by mermaid blocks
-    parts = full_text.split("```mermaid")
-    
-    for i, part in enumerate(parts):
-        if i > 0: # This part starts with mermaid code
-            if "```" in part:
-                mermaid_code, text_content = part.split("```", 1)
-                
-                # Render and paste mermaid diagram
-                mermaid_img = get_mermaid_image(mermaid_code.strip())
-                if mermaid_img:
-                    # SMART SCALING LOGIC
-                    # 1. Start with upscale for quality (2.0x for high visibility)
-                    scale_factor = 2.0
-                    new_w = int(mermaid_img.width * scale_factor)
-                    new_h = int(mermaid_img.height * scale_factor)
-                    mermaid_img = mermaid_img.resize((new_w, new_h), Image.Resampling.LANCZOS)
-                    
-                    # 2. Check Constraints
-                    max_w = page_size[0] - 200 # 100 margin each side
-                    max_h = page_size[1] - 300 # Top/Bottom margins
-                    
-                    # 3. Scale Width if needed
-                    if mermaid_img.width > max_w:
-                        ratio = max_w / mermaid_img.width
-                        new_w = max_w
-                        new_h = int(mermaid_img.height * ratio)
-                        mermaid_img = mermaid_img.resize((int(new_w), int(new_h)), Image.Resampling.LANCZOS)
-                        
-                    # 4. Check Height / Pagination
-                    # If it fits on current page?
-                    if current_baseline_y + mermaid_img.height > current_img.height - 100:
-                        # Move to new page
-                         pages.append(current_img)
-                         current_img, current_draw, TOP_MARGIN, RULE_SPACING = create_ruled_page(page_size)
-                         current_baseline_y = TOP_MARGIN + RULE_SPACING
-                    
-                    # 5. Check if it fits FULL page (rare but possible for mindmaps)
-                    if mermaid_img.height > max_h:
-                         ratio = max_h / mermaid_img.height
-                         new_h = max_h
-                         new_w = int(mermaid_img.width * ratio)
-                         mermaid_img = mermaid_img.resize((int(new_w), int(new_h)), Image.Resampling.LANCZOS)
-                    
-                    # Center image
-                    offset_x = (page_size[0] - mermaid_img.width) // 2
-                    current_img.paste(mermaid_img, (offset_x, int(current_baseline_y)), mask=mermaid_img.split()[3] if 'A' in mermaid_img.getbands() else None)
-                    current_baseline_y += mermaid_img.height + RULE_SPACING
-            else:
-                # Malformed block, treat as text
-                text_content = part
-        else:
-            text_content = part
+    # Font setup
+    font_path_expanded = os.path.expanduser(font_path)
+    if not os.path.isfile(font_path_expanded):
+         print(f"Warning: Font not found, using default.")
+         font = ImageFont.load_default()
+         font_height = 40
+    else:
+         font_size = int(RULE_SPACING * 0.75)
+         font = ImageFont.truetype(font_path_expanded, font_size)
+         ascent, descent = font.getmetrics()
+         font_height = ascent + descent
 
-        if not text_content.strip():
-            continue
-
-        # 3. Process Text Lines (Markdown Parsing)
-        # We split by newlines to respect paragraphs and lists
-        raw_lines = text_content.split('\n')
+    pending_diagram = None # To hold a diagram that needs to move to next page
+    
+    while queue or pending_diagram:
         
-        for raw_line in raw_lines:
-            stripped_line = raw_line.strip()
-            
-            # Paragraph spacing check
-            if not stripped_line:
-                current_baseline_y += RULE_SPACING // 2 # Half line for para break
-                continue
-                
-            # Indentation/List detection
-            indent_level = 0
-            prefix_width = 0
-            clean_line = stripped_line
-            
-            if raw_line.startswith('- ') or raw_line.startswith('* '):
-                indent_level = 1
-                prefix_width = 40
-                clean_line = raw_line[2:]
-            elif raw_line.startswith('  - ') or raw_line.startswith('  * '):
-                indent_level = 2
-                prefix_width = 80
-                clean_line = raw_line[4:]
-            elif raw_line.startswith('#'): # Headings
-                 clean_line = raw_line.lstrip('#').strip()
-            
-            # Wrap based on effective width
-            x_start = 120 + prefix_width
-            max_width = page_size[0] - x_start - 100
-            
-            wrapped_lines = wrap_text(clean_line, font, max_width)
+        # A. Check if we need a new page immediately (e.g., extremely full)
+        if current_baseline_y > page_size[1] - 100:
+             pages.append(current_img)
+             current_img, current_draw, TOP_MARGIN, RULE_SPACING = create_ruled_page(page_size)
+             current_baseline_y = TOP_MARGIN + RULE_SPACING
+             
+             # If we had a pending diagram, place it now at TOP of new page
+             if pending_diagram:
+                 current_baseline_y = place_diagram_on_page(pending_diagram, current_img, current_baseline_y, page_size, RULE_SPACING)
+                 pending_diagram = None
+                 continue 
 
-            for sub_line in wrapped_lines:
-                # Check page space
-                if current_baseline_y > current_img.height - 100:
-                    pages.append(current_img)
-                    current_img, current_draw, TOP_MARGIN, RULE_SPACING = create_ruled_page(page_size)
-                    current_baseline_y = TOP_MARGIN + RULE_SPACING
-                
-                # Draw Bullet point only on first subline
-                if sub_line == wrapped_lines[0] and indent_level > 0:
-                     bullet_x = 120 + (indent_level * 30) - 15
-                     bullet_y = current_baseline_y - 10
-                     current_draw.ellipse([bullet_x-3, bullet_y-3, bullet_x+3, bullet_y+3], fill="black")
+        # B. If we have a pending diagram but are still on the OLD page (gap filling mode)
+        #    We try to squeeze text in. But if queue is empty or next item is diagram, force new page.
+        if pending_diagram:
+             if not queue or queue[0]["type"] == "mermaid":
+                 # Cannot fill gap. Force new page.
+                 pages.append(current_img)
+                 current_img, current_draw, TOP_MARGIN, RULE_SPACING = create_ruled_page(page_size)
+                 current_baseline_y = TOP_MARGIN + RULE_SPACING
+                 current_baseline_y = place_diagram_on_page(pending_diagram, current_img, current_baseline_y, page_size, RULE_SPACING)
+                 pending_diagram = None
+                 continue
+                 
+             # Else: Next item is TEXT. Fill the gap!
+             item = queue.popleft()
+             # Calculate remaining lines
+             remaining_height = (page_size[1] - 100) - current_baseline_y
+             lines_capacity = int(remaining_height / RULE_SPACING)
+             
+             if lines_capacity <= 0: 
+                 # Cannot fill any more lines. Force new page for diagram.
+                 queue.appendleft(item) # Put back
+                 
+                 pages.append(current_img)
+                 current_img, current_draw, TOP_MARGIN, RULE_SPACING = create_ruled_page(page_size)
+                 current_baseline_y = TOP_MARGIN + RULE_SPACING
+                 current_baseline_y = place_diagram_on_page(pending_diagram, current_img, current_baseline_y, page_size, RULE_SPACING)
+                 pending_diagram = None
+                 continue 
+                 
+             # Draw only what fits
+             remaining_text, new_y = draw_text_chunk(current_img, current_draw, item["content"], current_baseline_y, font, RULE_SPACING, page_size, max_lines=lines_capacity)
+             current_baseline_y = new_y
+             
+             if remaining_text:
+                 # We filled the page, but text remains. 
+                 # Put remainder back at HEAD of queue
+                 queue.appendleft({"type": "text", "content": remaining_text})
+                 # Loop will hit A/B logic, force new page for diagram
+             
+             continue # Loop again to trigger new page logic
 
-                # --- Realism parameters ---
-                left_margin_drift = random.uniform(-2, 5) 
-                baseline_drift = random.uniform(-1, 1)           
-                line_float = random.uniform(-8, -2) 
-                
-                base_blue = random.randint(100, 115)
-                base_shift = random.randint(-2, 2)
-                ink_variation = (10 + base_shift, 10 + base_shift, base_blue)
+        # C. Normal Processing (No pending diagram)
+        item = queue.popleft()
+        
+        if item["type"] == "mermaid" or item["type"] == "mermaid_image":
+             # 1. Get Image
+             if item["type"] == "mermaid":
+                 mermaid_img = get_mermaid_image(item["content"])
+                 if not mermaid_img: continue
+             else:
+                 mermaid_img = item["content"] # Pre-rendered slice
 
-                line_slope = random.uniform(-0.01, 0.01) 
-                global_slant = random.uniform(-12, 2)
-                
-                draw_handwritten_line(
-                    current_img,
-                    current_draw,
-                    sub_line,
-                    x_start + left_margin_drift,
-                    current_baseline_y + line_float + baseline_drift,
-                    font,
-                    ink_variation,
-                    slant_angle=global_slant,
-                    line_slope=line_slope
-                )
-                current_baseline_y += RULE_SPACING
-    
-    # Append the last page
+             # 2. Force Upscale to Full Page Width (if not already sliced check)
+             # If it's a raw mermaid code, we ALWAYS upscale. 
+             # If it's a slice (mermaid_image), we assume it's already width-adjusted, but double check?
+             # Let's upscale everything to ensure consistency.
+             target_w = page_size[0] - 200 # Margins
+             
+             if mermaid_img.width != target_w:
+                 ratio = target_w / mermaid_img.width
+                 new_h = int(mermaid_img.height * ratio)
+                 mermaid_img = mermaid_img.resize((target_w, new_h), Image.Resampling.LANCZOS)
+             
+             # 3. Check for Massive Height (Multi-Page Slicing)
+             MAX_SLICE_HEIGHT = 1600 
+             
+             if mermaid_img.height > MAX_SLICE_HEIGHT:
+                 # SPLIT IT!
+                 total_h = mermaid_img.height
+                 num_slices = math.ceil(total_h / MAX_SLICE_HEIGHT)
+                 print(f"Diagram too tall ({total_h}px). Splitting into {num_slices} pages...")
+                 
+                 slices = []
+                 for i in range(num_slices):
+                     top = i * MAX_SLICE_HEIGHT
+                     bottom = min((i + 1) * MAX_SLICE_HEIGHT, total_h)
+                     # Crop: (left, top, right, bottom)
+                     crop_box = (0, top, mermaid_img.width, bottom)
+                     slice_img = mermaid_img.crop(crop_box)
+                     slices.append(slice_img)
+                 
+                 # Push slices back to HEAD of queue in reverse order
+                 # So slice 0 is processed next, then slice 1...
+                 for s in reversed(slices):
+                     queue.appendleft({"type": "mermaid_image", "content": s})
+                     
+                 continue # Loop again to pick up the first slice
+
+             # 4. Standard Placement Logic (for a single slice/image that fits ON A PAGE)
+             MIN_VISIBLE_HEIGHT = 1000
+             bottom_limit = page_size[1] - 100
+             available_h = bottom_limit - current_baseline_y
+             
+             if available_h < MIN_VISIBLE_HEIGHT:
+                 # Too small for this diagram. Defer to next page.
+                 pending_diagram = mermaid_img 
+             else:
+                 # Check if it fits the *current* gap
+                 if mermaid_img.height > available_h:
+                      # If it doesn't fit mostly, defer it (unless it's smaller than min visible?)
+                      # Since we sliced it to MAX_SLICE_HEIGHT, it might fit on a NEW page, but not here.
+                      pending_diagram = mermaid_img
+                 else:
+                      # Fits here nicely
+                      current_baseline_y = place_diagram_on_page(mermaid_img, current_img, current_baseline_y, page_size, RULE_SPACING)
+                 
+        else: # Text
+             remaining_text, new_y = draw_text_chunk(current_img, current_draw, item["content"], current_baseline_y, font, RULE_SPACING, page_size)
+             current_baseline_y = new_y
+             if remaining_text:
+                 # Didn't fit. Put remainder back. Logic A will handle new page.
+                 queue.appendleft({"type": "text", "content": remaining_text})
+
     pages.append(current_img)
     return pages
+
+
+def draw_text_chunk(img, draw, text, start_y, font, rule_spacing, page_size, max_lines=None):
+    """
+    Draws text until space runs out or text ends.
+    Returns (remaining_text, new_y).
+    """
+    # 1. Pre-process: Handle literal escapes and split lines
+    text = text.replace('\\n', '\n')
+    
+    # 2. Parse Markdown Structure
+    processed_lines = []
+    
+    # Split by actual newlines to respect structure
+    raw_lines = text.split('\n')
+    
+    for line in raw_lines:
+        line = line.strip()
+        if not line:
+            # Empty line = Paragraph break (simulate with empty string)
+            processed_lines.append("") 
+            continue
+            
+        if line.startswith('#'):
+            # Heading -> Uppercase
+            clean = line.lstrip('#').strip().upper()
+            processed_lines.append(clean)
+            processed_lines.append("") # Add space after heading
+        elif line.startswith('- ') or line.startswith('* ') or line.startswith('\\- '):
+            # List -> Bullet (Handle \- artifact)
+            clean = "• " + line.replace('\\-', '').lstrip('-').lstrip('*').strip()
+            processed_lines.append(clean)
+        else:
+            # Normal text
+            processed_lines.append(line)
+            
+    # 3. Wrapping & Drawing Loop
+    drawn_count = 0
+    y = start_y
+    bottom_limit = page_size[1] - 100
+    
+    # We must iterate through processed lines, wrap each one, and draw
+    # If we run out of space, we must reconstruct the remaining text correctly.
+    
+    for i, p_line in enumerate(processed_lines):
+        if not p_line:
+             # Just a spacing line (paragraph break)
+             if max_lines and drawn_count >= max_lines:
+                 # Reconstruct remaining
+                 remaining = "\n".join(processed_lines[i:])
+                 return remaining, y
+             
+             if y > bottom_limit:
+                 remaining = "\n".join(processed_lines[i:])
+                 return remaining, y
+                 
+             y += rule_spacing // 2 # Half space for para break
+             continue
+             
+        # Wrap this content line
+        # Check if it's a bullet to indent
+        indent = 40 if p_line.startswith("• ") else 0
+        wrapped = wrap_text(p_line, font, page_size[0] - 300 - indent)
+        
+        for w_line in wrapped:
+            if max_lines and drawn_count >= max_lines:
+                 # Current p_line is partially drawn? No, simple logic: return current p_line start
+                 # But we might have drawn half of wrapped? 
+                 # Complex. Let's simplify: If ANY part of p_line fails, return p_line + rest
+                 remaining = "\n".join(processed_lines[i:])
+                 return remaining, y
+            
+            if y > bottom_limit:
+                 remaining = "\n".join(processed_lines[i:])
+                 return remaining, y
+            
+            draw_x = 150 + indent
+            draw_handwritten_line(img, draw, w_line, draw_x, y, font, (20, 20, 100))
+            y += rule_spacing
+            drawn_count += 1
+            
+    return None, y
 
 
 def apply_page_distortion(pil_img):

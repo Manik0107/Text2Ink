@@ -1,0 +1,12 @@
+__pycache__
+.venv
+venv
+output_images
+*.pyc
+.git
+.gitignore
+*.md
+*.log
+dist
+build
+__pypackages__

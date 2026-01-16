@@ -3,6 +3,10 @@ from PIL import Image, ImageDraw, ImageFont
 import random, math, os
 import cv2
 import numpy as np
+from dotenv import load_dotenv
+from agent import generate_simple_notes, generate_mermaid_code
+
+load_dotenv()
 
 
 def extract_text_blocks(pdf_path):
@@ -242,83 +246,177 @@ def create_ruled_page(page_size=(1600, 2000)):
     return img, draw, TOP_MARGIN, RULE_SPACING
 
 
+import httpx
+import base64
+
+def get_mermaid_image(mermaid_code):
+    """Fetches a PNG of the mermaid diagram from mermaid.ink."""
+    graphbytes = mermaid_code.encode("utf8")
+    base64_bytes = base64.urlsafe_b64encode(graphbytes)
+    base64_string = base64_bytes.decode("ascii")
+    url = "https://mermaid.ink/img/" + base64_string
+    
+    try:
+        response = httpx.get(url, timeout=10.0)
+        response.raise_for_status()
+        img_array = np.asarray(bytearray(response.content), dtype=np.uint8)
+        img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
+        return Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+    except Exception as e:
+        print(f"Error fetching mermaid diagram: {e}")
+        return None
+
+
 def render_full_text(full_text, font_path, page_size=(1600, 2000)):
-    """Renders text across multiple pages if needed."""
+    """Renders text across multiple pages with formatting and diagrams."""
     
     # 1. Load Font
     try:
         font_path_expanded = os.path.expanduser(font_path)
         if not os.path.isfile(font_path_expanded):
             raise OSError(f"Font file not found: {font_path_expanded}")
-        # Adjust font size to fit arguably within the rule spacing (hardcoded 70 for now)
         font_size = int(70 * 0.75)  
         font = ImageFont.truetype(font_path_expanded, font_size)
     except Exception as e:
         print(f"Warning: could not load font '{font_path}'. Falling back to default font. ({e})")
         font = ImageFont.load_default()
 
-    # 2. Prepare text wrapping
-    # Create a dummy image just to get width constraints
-    dummy_img = Image.new("RGB", page_size)
-    x = 120
-    margin_right = 100
-    max_text_width = dummy_img.width - x - margin_right
-    
-    # Reflow Logic: replace newlines with space for continuous flow
-    reflowed_text = full_text.replace("\n", " ")
-    reflowed_text = " ".join(reflowed_text.split()) # clean up multiple spaces
-    
-    wrapped_lines = wrap_text(reflowed_text, font, max_text_width)
-    
-    # 3. Pagination Loop
     pages = []
     
     # Start first page
     current_img, current_draw, TOP_MARGIN, RULE_SPACING = create_ruled_page(page_size)
     current_baseline_y = TOP_MARGIN + RULE_SPACING
     
-    for line in wrapped_lines:
-        # Check if we need a new page
-        # Leave 100px bottom margin
-        if current_baseline_y > current_img.height - 100:
-            # Finish current page
-            pages.append(current_img)
-            # Start new page
-            current_img, current_draw, TOP_MARGIN, RULE_SPACING = create_ruled_page(page_size)
-            current_baseline_y = TOP_MARGIN + RULE_SPACING
-            
-        if not line.strip():
-            current_baseline_y += RULE_SPACING
+    # 2. Process Content Blocks (Text vs. Mermaid)
+    # Split by mermaid blocks
+    parts = full_text.split("```mermaid")
+    
+    for i, part in enumerate(parts):
+        if i > 0: # This part starts with mermaid code
+            if "```" in part:
+                mermaid_code, text_content = part.split("```", 1)
+                
+                # Render and paste mermaid diagram
+                mermaid_img = get_mermaid_image(mermaid_code.strip())
+                if mermaid_img:
+                    # SMART SCALING LOGIC
+                    # 1. Start with upscale for quality (2.0x for high visibility)
+                    scale_factor = 2.0
+                    new_w = int(mermaid_img.width * scale_factor)
+                    new_h = int(mermaid_img.height * scale_factor)
+                    mermaid_img = mermaid_img.resize((new_w, new_h), Image.Resampling.LANCZOS)
+                    
+                    # 2. Check Constraints
+                    max_w = page_size[0] - 200 # 100 margin each side
+                    max_h = page_size[1] - 300 # Top/Bottom margins
+                    
+                    # 3. Scale Width if needed
+                    if mermaid_img.width > max_w:
+                        ratio = max_w / mermaid_img.width
+                        new_w = max_w
+                        new_h = int(mermaid_img.height * ratio)
+                        mermaid_img = mermaid_img.resize((int(new_w), int(new_h)), Image.Resampling.LANCZOS)
+                        
+                    # 4. Check Height / Pagination
+                    # If it fits on current page?
+                    if current_baseline_y + mermaid_img.height > current_img.height - 100:
+                        # Move to new page
+                         pages.append(current_img)
+                         current_img, current_draw, TOP_MARGIN, RULE_SPACING = create_ruled_page(page_size)
+                         current_baseline_y = TOP_MARGIN + RULE_SPACING
+                    
+                    # 5. Check if it fits FULL page (rare but possible for mindmaps)
+                    if mermaid_img.height > max_h:
+                         ratio = max_h / mermaid_img.height
+                         new_h = max_h
+                         new_w = int(mermaid_img.width * ratio)
+                         mermaid_img = mermaid_img.resize((int(new_w), int(new_h)), Image.Resampling.LANCZOS)
+                    
+                    # Center image
+                    offset_x = (page_size[0] - mermaid_img.width) // 2
+                    current_img.paste(mermaid_img, (offset_x, int(current_baseline_y)), mask=mermaid_img.split()[3] if 'A' in mermaid_img.getbands() else None)
+                    current_baseline_y += mermaid_img.height + RULE_SPACING
+            else:
+                # Malformed block, treat as text
+                text_content = part
+        else:
+            text_content = part
+
+        if not text_content.strip():
             continue
 
-        # --- Realism parameters ---
-        left_margin_drift = random.uniform(-5, 15)      
-        cumulative_drift = random.uniform(-1, 1)        
-        line_float = random.uniform(-8, -2) 
-        baseline_drift = random.uniform(-1, 1)           
+        # 3. Process Text Lines (Markdown Parsing)
+        # We split by newlines to respect paragraphs and lists
+        raw_lines = text_content.split('\n')
         
-        base_blue = random.randint(100, 115)
-        base_shift = random.randint(-2, 2)
-        ink_variation = (10 + base_shift, 10 + base_shift, base_blue)
+        for raw_line in raw_lines:
+            stripped_line = raw_line.strip()
+            
+            # Paragraph spacing check
+            if not stripped_line:
+                current_baseline_y += RULE_SPACING // 2 # Half line for para break
+                continue
+                
+            # Indentation/List detection
+            indent_level = 0
+            prefix_width = 0
+            clean_line = stripped_line
+            
+            if raw_line.startswith('- ') or raw_line.startswith('* '):
+                indent_level = 1
+                prefix_width = 40
+                clean_line = raw_line[2:]
+            elif raw_line.startswith('  - ') or raw_line.startswith('  * '):
+                indent_level = 2
+                prefix_width = 80
+                clean_line = raw_line[4:]
+            elif raw_line.startswith('#'): # Headings
+                 clean_line = raw_line.lstrip('#').strip()
+            
+            # Wrap based on effective width
+            x_start = 120 + prefix_width
+            max_width = page_size[0] - x_start - 100
+            
+            wrapped_lines = wrap_text(clean_line, font, max_width)
 
-        line_slope = random.uniform(-0.01, 0.01) 
-        global_slant = random.uniform(-12, 2)
+            for sub_line in wrapped_lines:
+                # Check page space
+                if current_baseline_y > current_img.height - 100:
+                    pages.append(current_img)
+                    current_img, current_draw, TOP_MARGIN, RULE_SPACING = create_ruled_page(page_size)
+                    current_baseline_y = TOP_MARGIN + RULE_SPACING
+                
+                # Draw Bullet point only on first subline
+                if sub_line == wrapped_lines[0] and indent_level > 0:
+                     bullet_x = 120 + (indent_level * 30) - 15
+                     bullet_y = current_baseline_y - 10
+                     current_draw.ellipse([bullet_x-3, bullet_y-3, bullet_x+3, bullet_y+3], fill="black")
 
-        draw_y = current_baseline_y + line_float 
+                # --- Realism parameters ---
+                left_margin_drift = random.uniform(-2, 5) 
+                baseline_drift = random.uniform(-1, 1)           
+                line_float = random.uniform(-8, -2) 
+                
+                base_blue = random.randint(100, 115)
+                base_shift = random.randint(-2, 2)
+                ink_variation = (10 + base_shift, 10 + base_shift, base_blue)
 
-        draw_handwritten_line(
-            current_img,
-            current_draw,
-            line,
-            x + left_margin_drift,
-            draw_y + cumulative_drift + baseline_drift,
-            font,
-            ink_variation,
-            slant_angle=global_slant,
-            line_slope=line_slope
-        )
-        current_baseline_y += RULE_SPACING
-
+                line_slope = random.uniform(-0.01, 0.01) 
+                global_slant = random.uniform(-12, 2)
+                
+                draw_handwritten_line(
+                    current_img,
+                    current_draw,
+                    sub_line,
+                    x_start + left_margin_drift,
+                    current_baseline_y + line_float + baseline_drift,
+                    font,
+                    ink_variation,
+                    slant_angle=global_slant,
+                    line_slope=line_slope
+                )
+                current_baseline_y += RULE_SPACING
+    
     # Append the last page
     pages.append(current_img)
     return pages
@@ -382,8 +480,8 @@ def add_paper_texture(pil_img, intensity=0.1):
 def process_image_post_effects(base_img):
     """Apply textures to the generated base image."""
     img = apply_page_distortion(base_img)
-    img = add_ink_noise(img)
-    img = add_paper_texture(img, 0.08)
+    # img = add_ink_noise(img)       # Disabled to remove grains
+    # img = add_paper_texture(img, 0.08) # Disabled to remove grains
     return img
 
 
@@ -396,16 +494,32 @@ def pdf_to_handwritten(pdf_path, output_dir, font_path):
     for b in blocks:
         full_text += b["text"] + "\n\n" # Add some internal spacing between blocks
 
-    print(f"Total Text Length: {len(full_text)} characters")
+    print(f"Total Text Length (Original): {len(full_text)} characters")
 
-    # Render pages
-    raw_pages = render_full_text(full_text, font_path)
+    # Generate Structured Notes (with Inline Diagrams found by the Agent)
+    print("Generating structured notes with inline diagrams...")
+    # This function now orchestrates both the notes and the mermaid diagrams
+    final_content = generate_simple_notes(full_text) 
+    print(f"Final Content Length: {len(final_content)} characters")
     
+    # Render pages using the notes
+    raw_pages = render_full_text(final_content, font_path)
+    
+    final_images = []
     for i, page_img in enumerate(raw_pages):
         final_img = process_image_post_effects(page_img)
         out_path = f"{output_dir}/page_{i}.png"
         final_img.save(out_path)
+        final_images.append(final_img)
         print(f"Saved {out_path}")
+        
+    # Save as PDF
+    if final_images:
+        pdf_path = f"{output_dir}/handwritten_notes.pdf"
+        final_images[0].save(
+            pdf_path, "PDF", resolution=100.0, save_all=True, append_images=final_images[1:]
+        )
+        print(f"Saved PDF to {pdf_path}")
 
 
 if __name__ == "__main__":

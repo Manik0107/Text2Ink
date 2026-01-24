@@ -36,13 +36,12 @@ graph TD
         K --> L
     end
     
-    L --> M(Pages .png)
-    M --> N[Final PDF]
+    L --> M[Final PDF]
     
-    style A fill:#f9f,stroke:#333
-    style C fill:#bbf,stroke:#333
-    style H fill:#dfd,stroke:#333
-    style N fill:#f96,stroke:#333,stroke-width:4px
+    style A fill:#4a148c,stroke:#333,color:#fff
+    style C fill:#0d47a1,stroke:#333,color:#fff
+    style H fill:#1b5e20,stroke:#333,color:#fff
+    style M fill:#bf360c,stroke:#333,stroke-width:4px,color:#fff
 ```
 </td>
 <td width="50%">

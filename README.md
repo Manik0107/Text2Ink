@@ -16,7 +16,7 @@
 ```mermaid
 graph TD
     A[Input: PDF / YouTube URL] --> |Extract| B(Raw Content)
-    B --> C{Agno Agents}
+    B --> C{AI Agents}
     
     subgraph "AI Processing"
         C --> D[Notes Agent]

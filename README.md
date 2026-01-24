@@ -4,6 +4,8 @@
 
 .ink is an advanced document processing engine that transforms standard PDFs and YouTube transcripts into structured, professional handwritten notes. Beyond simple font conversion, it utilizes a sophisticated AI pipeline to analyze content, synthesize logical structures, and generate systemic diagrams that are seamlessly integrated into a realistic handwritten layout.
 
+![Demo Output](assets/demo_output.png)
+
 ## Core Capabilities
 
 .ink supports two input sources: **PDF documents** and **YouTube videos** (via transcript extraction). Both are processed through the same intelligent pipeline.

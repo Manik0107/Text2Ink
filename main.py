@@ -691,31 +691,44 @@ if __name__ == "__main__":
     parser.add_argument(
         "input",
         nargs="?",
-        default="pdf/test.pdf",
+        default=None,
         help="Input file path (PDF) or YouTube URL"
     )
-    parser.add_argument(
-        "-o", "--output",
-        default="output_images",
-        help="Output directory for generated images (default: output_images)"
-    )
+    
     parser.add_argument(
         "-f", "--font",
         default="TTF/PatrickHand-Regular.ttf",
         help="Path to handwriting font file (default: TTF/PatrickHand-Regular.ttf)"
     )
     
+    # Hardcoded output directory
+    output_dir = "output"
+    
     args = parser.parse_args()
     
     # Auto-detect input type
     input_value = args.input
+
+    # Interactive mode if no argument provided
+    if input_value is None:
+        print("\nWelcome to .ink - Intelligent Handwritten Notes")
+        print("-----------------------------------------------")
+        input_value = input("Please enter a YouTube URL or PDF file path: ").strip()
+        # Clean up quotes if user pasted them
+        input_value = input_value.strip('"').strip("'")
+    
+    if not input_value:
+        print("No input provided.")
+        exit(0)
+    
+    print(f"Output will be saved to: {output_dir}")
     
     if "youtube.com" in input_value or "youtu.be" in input_value:
         # YouTube URL detected
-        youtube_to_handwritten(input_value, args.output, args.font)
+        youtube_to_handwritten(input_value, output_dir, args.font)
     elif os.path.isfile(input_value) and input_value.lower().endswith('.pdf'):
         # PDF file detected
-        pdf_to_handwritten(input_value, args.output, args.font)
+        pdf_to_handwritten(input_value, output_dir, args.font)
     else:
         print(f"Error: Invalid input '{input_value}'.")
         print("Please provide either:")

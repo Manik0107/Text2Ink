@@ -8,8 +8,10 @@ import numpy as np
 import httpx
 import base64
 import json
+import argparse
 from dotenv import load_dotenv
 from agent import generate_simple_notes, generate_mermaid_code
+from youtube_extractor import get_youtube_text
 
 load_dotenv()
 
@@ -625,21 +627,15 @@ def process_image_post_effects(base_img):
     return img
 
 
-def pdf_to_handwritten(pdf_path, output_dir, font_path):
+def text_to_handwritten(text, output_dir, font_path):
+    """Core function to convert any text to handwritten notes."""
     os.makedirs(output_dir, exist_ok=True)
-    blocks = extract_text_blocks(pdf_path)
     
-    # Aggregate all text
-    full_text = ""
-    for b in blocks:
-        full_text += b["text"] + "\n\n" # Add some internal spacing between blocks
-
-    print(f"Total Text Length (Original): {len(full_text)} characters")
+    print(f"Total Text Length (Original): {len(text)} characters")
 
     # Generate Structured Notes (with Inline Diagrams found by the Agent)
     print("Generating structured notes with inline diagrams...")
-    # This function now orchestrates both the notes and the mermaid diagrams
-    final_content = generate_simple_notes(full_text) 
+    final_content = generate_simple_notes(text) 
     print(f"Final Content Length: {len(final_content)} characters")
     
     # Render pages using the notes
@@ -655,15 +651,74 @@ def pdf_to_handwritten(pdf_path, output_dir, font_path):
         
     # Save as PDF
     if final_images:
-        pdf_path = f"{output_dir}/handwritten_notes.pdf"
+        pdf_output_path = f"{output_dir}/handwritten_notes.pdf"
         final_images[0].save(
-            pdf_path, "PDF", resolution=100.0, save_all=True, append_images=final_images[1:]
+            pdf_output_path, "PDF", resolution=100.0, save_all=True, append_images=final_images[1:]
         )
-        print(f"Saved PDF to {pdf_path}")
+        print(f"Saved PDF to {pdf_output_path}")
+
+
+def pdf_to_handwritten(pdf_path, output_dir, font_path):
+    """Convert PDF to handwritten notes."""
+    print(f"Processing PDF: {pdf_path}")
+    blocks = extract_text_blocks(pdf_path)
+    
+    # Aggregate all text
+    full_text = ""
+    for b in blocks:
+        full_text += b["text"] + "\n\n"
+    
+    text_to_handwritten(full_text, output_dir, font_path)
+
+
+def youtube_to_handwritten(youtube_url, output_dir, font_path):
+    """Convert YouTube video transcript to handwritten notes."""
+    print(f"Processing YouTube video: {youtube_url}")
+    
+    try:
+        # Extract transcript from YouTube
+        transcript_text = get_youtube_text(youtube_url)
+        text_to_handwritten(transcript_text, output_dir, font_path)
+    except Exception as e:
+        print(f"Error processing YouTube video: {e}")
+        raise
 
 
 if __name__ == "__main__":
-    pdf_path = "pdf/test.pdf"
-    output_dir = "output_images"
-    font_path = "TTF/PatrickHand-Regular.ttf"
-    pdf_to_handwritten(pdf_path, output_dir, font_path)
+    parser = argparse.ArgumentParser(
+        description="Text2Ink - Convert PDFs or YouTube videos to handwritten notes"
+    )
+    parser.add_argument(
+        "input",
+        nargs="?",
+        default="pdf/test.pdf",
+        help="Input file path (PDF) or YouTube URL"
+    )
+    parser.add_argument(
+        "-o", "--output",
+        default="output_images",
+        help="Output directory for generated images (default: output_images)"
+    )
+    parser.add_argument(
+        "-f", "--font",
+        default="TTF/PatrickHand-Regular.ttf",
+        help="Path to handwriting font file (default: TTF/PatrickHand-Regular.ttf)"
+    )
+    
+    args = parser.parse_args()
+    
+    # Auto-detect input type
+    input_value = args.input
+    
+    if "youtube.com" in input_value or "youtu.be" in input_value:
+        # YouTube URL detected
+        youtube_to_handwritten(input_value, args.output, args.font)
+    elif os.path.isfile(input_value) and input_value.lower().endswith('.pdf'):
+        # PDF file detected
+        pdf_to_handwritten(input_value, args.output, args.font)
+    else:
+        print(f"Error: Invalid input '{input_value}'.")
+        print("Please provide either:")
+        print("  - A valid PDF file path")
+        print("  - A YouTube URL (youtube.com or youtu.be)")
+        exit(1)

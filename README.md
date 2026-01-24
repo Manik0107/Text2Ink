@@ -1,13 +1,15 @@
-# Text2Ink
+# .ink
 
-**Intelligent Handwritten Note Generation s**
+**Intelligent Handwritten Note Generation**
 
-Text2Ink is an advanced document processing engine that transforms standard PDFs into structured, professional handwritten notes. Beyond simple font conversion, it utilizes a sophisticated AI pipeline to analyze content, synthesize logical structures, and generate systemic diagrams that are seamlessly integrated into a realistic handwritten layout.
+.ink is an advanced document processing engine that transforms standard PDFs and YouTube transcripts into structured, professional handwritten notes. Beyond simple font conversion, it utilizes a sophisticated AI pipeline to analyze content, synthesize logical structures, and generate systemic diagrams that are seamlessly integrated into a realistic handwritten layout.
 
 ## Core Capabilities
 
+.ink supports two input sources: **PDF documents** and **YouTube videos** (via transcript extraction). Both are processed through the same intelligent pipeline.
+
 ### 1. Intelligent Content Analysis (Agno Agents)
-Text2Ink employs a multi-agent AI system:
+.ink employs a multi-agent AI system:
 *   **Notes Agent**: Analyzes raw PDF text to extract key concepts, structuring them into a clean, hierarchical format with substantial headers and bullet points.
 *   **Mermaid Agent**: Identifies complex relationships and processes within the text to generate valid Mermaid.js diagram definitions. It follows a strict "Systemic Logic" manifesto, ensuring diagrams represent causality, feedback loops, and inputs/outputs rather than simple associations.
 
@@ -30,8 +32,8 @@ The rendering system treats content as a fluid stream of "Blocks" (Text and Diag
 
 1.  **Clone the Repository**:
     ```bash
-    git clone https://github.com/Manik0107/Text2Ink.git
-    cd Text2Ink
+    git clone https://github.com/Manik0107/.ink.git
+    cd .ink
     ```
 
 2.  **Install Dependencies**:
@@ -47,12 +49,38 @@ The rendering system treats content as a fluid stream of "Blocks" (Text and Diag
 
 ## Usage
 
-1.  **Prepare Input**: Place your PDF document in the specified input path (default is defined in `main.py`).
+### Processing PDFs
+
+1.  **Prepare Input**: Place your PDF document in the specified input path (e.g., `pdf/test.pdf`).
 2.  **Run the Engine**:
     ```bash
-    uv run main.py
+    uv run main.py pdf/your_document.pdf
     ```
 3.  **View Output**: The generated handwritten pages and compiled PDF will be saved in the `output_images` directory.
+
+### Processing YouTube Videos
+
+1.  **Get YouTube URL**: Copy the URL of any YouTube video with available transcripts.
+2.  **Run the Engine**:
+    ```bash
+    uv run main.py "https://www.youtube.com/watch?v=VIDEO_ID"
+    ```
+3.  **View Output**: The transcript will be converted to handwritten notes and saved in the `output_images` directory.
+
+### Command-Line Options
+
+```bash
+# Specify custom output directory
+uv run main.py input.pdf -o custom_output/
+
+# Use a different handwriting font
+uv run main.py "https://youtu.be/VIDEO_ID" -f fonts/custom_font.ttf
+
+# Combine options
+uv run main.py input.pdf -o notes/ -f fonts/script.ttf
+```
+
+**Note**: YouTube videos must have transcripts enabled (either auto-generated or manual). The tool automatically detects whether the input is a PDF or YouTube URL.
 
 ## Technical Architecture
 

@@ -1,0 +1,6 @@
+fitz
+pillow
+opencv-python
+numpy
+PyMuPDF
+youtube-transcript-api

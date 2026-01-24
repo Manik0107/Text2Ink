@@ -1,10 +1,57 @@
 # .ink
 
+![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)
+![Python](https://img.shields.io/badge/python-3.11%2B-blue)
+
+
 **Intelligent Handwritten Note Generation**
 
 .ink is an advanced document processing engine that transforms standard PDFs and YouTube transcripts into structured, professional handwritten notes. Beyond simple font conversion, it utilizes a sophisticated AI pipeline to analyze content, synthesize logical structures, and generate systemic diagrams that are seamlessly integrated into a realistic handwritten layout.
 
-![Demo Output](assets/demo_output.png)
+<table>
+<tr>
+<td width="50%">
+<h3 align="center">System Architecture</h3>
+
+```mermaid
+graph TD
+    A[Input: PDF / YouTube URL] --> |Extract| B(Raw Content)
+    B --> C{Agno Agents}
+    
+    subgraph "AI Processing"
+        C --> D[Notes Agent]
+        C --> E[Mermaid Agent]
+        D --> F(Text Blocks)
+        E --> G(Diagrams)
+    end
+    
+    F --> H[Layout Engine]
+    G --> H
+    
+    subgraph "Rendering"
+        H --> I{Pagination}
+        I --> J(Handwriting)
+        I --> K(Mermaid.ink)
+        J --> L[Compositor]
+        K --> L
+    end
+    
+    L --> M(Pages .png)
+    M --> N[Final PDF]
+    
+    style A fill:#f9f,stroke:#333
+    style C fill:#bbf,stroke:#333
+    style H fill:#dfd,stroke:#333
+    style N fill:#f96,stroke:#333,stroke-width:4px
+```
+</td>
+<td width="50%">
+<h3 align="center">Generated Output</h3>
+
+<img src="assets/demo_output.png" alt="Demo Output" width="100%">
+</td>
+</tr>
+</table>
 
 ## Core Capabilities
 
@@ -30,70 +77,15 @@ The rendering system treats content as a fluid stream of "Blocks" (Text and Diag
 *   **Text Formatting**: Automatically parses Markdown syntax, converting headers to uppercase bold text and standardizing lists with bullet points.
 *   **Visual Fidelity**: Incorporates realistic paper textures, ruled lines, and ink variability (though pressure is normalized for legibility) to create high-quality output images.
 
-## Installation
-
-1.  **Clone the Repository**:
-    ```bash
-    git clone https://github.com/Manik0107/.ink.git
-    cd .ink
-    ```
-
-2.  **Install Dependencies**:
-    ```bash
-    pip install -r requirements.txt
-    ```
-
-3.  **Configure Environment**:
-    Create a `.env` file and add your API keys (required for the AI Agents):
-    ```bash
-    OPENROUTER_API_KEY=your_key_here
-    ```
-
 ## Usage
 
-### Processing PDFs
+Run the engine and provide your input (YouTube URL or PDF path).
 
-1.  **Prepare Input**: Place your PDF document in the specified input path (e.g., `pdf/test.pdf`).
-2.  **Run the Engine**:
-    ```bash
-    uv run main.py pdf/your_document.pdf
-    ```
-3.  **View Output**: The generated handwritten pages and compiled PDF will be saved in the `output_images` directory.
+**Example Output**: The transcript will be converted to handwritten notes and saved in the `output` directory.
 
-### Processing YouTube Videos
 
-1.  **Get YouTube URL**: Copy the URL of any YouTube video with available transcripts.
-2.  **Run the Engine**:
-    ```bash
-    uv run main.py "https://www.youtube.com/watch?v=VIDEO_ID"
-    ```
-3.  **View Output**: The transcript will be converted to handwritten notes and saved in the `output_images` directory.
-
-### Command-Line Options
-
-```bash
-# Specify custom output directory
-uv run main.py input.pdf -o custom_output/
-
-# Use a different handwriting font
-uv run main.py "https://youtu.be/VIDEO_ID" -f fonts/custom_font.ttf
-
-# Combine options
-uv run main.py input.pdf -o notes/ -f fonts/script.ttf
-```
-
-**Note**: YouTube videos must have transcripts enabled (either auto-generated or manual). The tool automatically detects whether the input is a PDF or YouTube URL.
-
-## Technical Architecture
-
-The system operates as a linear pipeline:
-1.  **Extraction**: `fitz` (PyMuPDF) extracts raw text from the source PDF.
-2.  **Orchestration**: `agent.py` invokes the AI Agents to transform raw text into a Structured Note Object containing text blocks and Mermaid diagram codes.
-3.  **Rendering**: `main.py` processes the Note Object:
-    *   **Text Rendering**: Uses Pillow (PIL) to draw text with randomized handwriting fonts on a ruled background.
-    *   **Diagram Rendering**: Fetches rendered diagrams from `mermaid.ink`, applies upscale/slice logic, and composites them onto the page.
-4.  **Assembly**: Individual page images are compiled into a final `handwritten_notes.pdf`.
 
 ## License
+
 
 This project is licensed under the Apache License 2.0.
